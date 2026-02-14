@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +54,9 @@ def parse_args(argv: list[str]) -> Config:
     if not (0.1 <= args.test_size <= 0.5):
         raise ValueError("--test-size must be between 0.1 and 0.5")
 
+    if args.random_state < 0:
+        raise ValueError("--random-state must be a non-negative integer")
+
     return Config(
         input_path=Path(args.input),
         test_size=args.test_size,
@@ -66,7 +70,13 @@ def load_and_validate(cfg: Config) -> pd.DataFrame:
     if not cfg.input_path.exists():
         raise FileNotFoundError(f"Input file not found: {cfg.input_path}")
 
+    if cfg.input_path.stat().st_size == 0:
+        raise ValueError(f"Input file is empty: {cfg.input_path}")
+
     df = pd.read_csv(cfg.input_path)
+
+    if df.empty:
+        raise ValueError("CSV file contains headers but no data rows.")
 
     missing = [c for c in FEATURES + [TARGET] if c not in df.columns]
     if missing:
@@ -115,7 +125,7 @@ def train_and_evaluate(df: pd.DataFrame, cfg: Config) -> int:
         ]
     )
 
-    LOG.info("Training model...")
+    LOG.info("Training on %d samples, evaluating on %d samples", len(X_train), len(X_test))
     pipeline.fit(X_train, y_train)
 
     y_pred = pipeline.predict(X_test)
@@ -130,7 +140,10 @@ def train_and_evaluate(df: pd.DataFrame, cfg: Config) -> int:
     LOG.info("  RMSE = %.2f", rmse)
     LOG.info("  R2   = %.4f", r2)
 
-    cfg.model_out.parent.mkdir(parents=True, exist_ok=True)
+    out_dir = cfg.model_out.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if out_dir.exists() and not os.access(out_dir, os.W_OK):
+        raise PermissionError(f"Cannot write to output directory: {out_dir}")
     joblib.dump(pipeline, cfg.model_out)
     LOG.info("Saved model to %s", cfg.model_out)
 

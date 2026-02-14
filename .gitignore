@@ -5,3 +5,4 @@ __pycache__/
 .DS_Store
 model.joblib
 output/
+.pytest_cache/

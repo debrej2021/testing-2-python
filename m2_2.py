@@ -83,6 +83,13 @@ def load_and_validate(cfg: Config) -> pd.DataFrame:
     if after != before:
         LOG.warning("Dropped %d invalid rows (non-numeric or missing)", before - after)
 
+    # Reject rows with negative feature values or non-positive prices
+    valid_mask = (df[FEATURES] >= 0).all(axis=1) & (df[TARGET] > 0)
+    n_invalid = (~valid_mask).sum()
+    if n_invalid:
+        LOG.warning("Dropped %d rows with negative features or non-positive price", n_invalid)
+        df = df[valid_mask].reset_index(drop=True)
+
     if len(df) < 4:
         raise ValueError("Not enough valid rows to train a model.")
 
@@ -98,6 +105,7 @@ def train_and_evaluate(df: pd.DataFrame, cfg: Config) -> int:
         y,
         test_size=cfg.test_size,
         random_state=cfg.random_state,
+        shuffle=True,
     )
 
     pipeline = Pipeline(
@@ -113,8 +121,8 @@ def train_and_evaluate(df: pd.DataFrame, cfg: Config) -> int:
     y_pred = pipeline.predict(X_test)
 
     mae = mean_absolute_error(y_test, y_pred)
-    #mse = mean_squared_error(y_test, y_pred)
-    rmse = mae ** 0.5
+    mse = mean_squared_error(y_test, y_pred)
+    rmse = mse ** 0.5
     r2 = r2_score(y_test, y_pred)
 
     LOG.info("Metrics:")
